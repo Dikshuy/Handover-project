@@ -6,6 +6,10 @@ L = 2.5  # Wheelbase
 N = 5    # Prediction horizon
 dt = 0.1  # Time step
 
+# Add takeover parameters
+TAKEOVER_TRIGGER_TIME = 10  # Time at which takeover is triggered
+TAKEOVER_DURATION = 5  # Duration of the takeover process
+
 # Define state and control variables
 x = ca.MX.sym('x')
 y = ca.MX.sym('y')
@@ -21,15 +25,22 @@ delta_ad = ca.MX.sym('delta_ad')  # AD agent steering input
 control_h = ca.vertcat(a_h, delta_h)
 control_ad = ca.vertcat(a_ad, delta_ad)
 
-# Time-varying blending factor (alpha) for shared control
-def alpha(t, t0=10, alpha_rate=1):
-    return 1 / (1 + np.exp(-alpha_rate * (t - t0)))
+# # Time-varying blending factor (alpha) for shared control
+# def alpha(t, t0=10, T=5, alpha_rate=1):
+#     return 1 / (1 + np.exp(-alpha_rate * ((t - t0) / T)))
+
+# Modified alpha function to include trigger time
+def alpha(t, trigger_time=TAKEOVER_TRIGGER_TIME, duration=TAKEOVER_DURATION):
+    if t < trigger_time:
+        return 0
+    elif t >= trigger_time + duration:
+        return 1
+    else:
+        return (t - trigger_time) / duration
 
 # Blended control inputs
 def blended_control(alpha_t, control_h, control_ad):
-    a = alpha_t * control_h[0] + (1 - alpha_t) * control_ad[0]
-    delta = alpha_t * control_h[1] + (1 - alpha_t) * control_ad[1]
-    return ca.vertcat(a, delta)
+    return alpha_t * control_h + (1 - alpha_t) * control_ad
 
 # Vehicle dynamics using bicycle model
 def bicycle_model(state, control):
@@ -42,6 +53,12 @@ def bicycle_model(state, control):
     v_next = v + a * dt
 
     return ca.vertcat(x_next, y_next, theta_next, v_next)
+
+def human_input_estimate(t):
+    # Simulating more erratic human behavior
+    steering = 0.1 * np.sin(2 * np.pi * t / 3) + 0.05 * np.random.randn()
+    acceleration = 0.5 * np.cos(2 * np.pi * t / 5) + 0.1 * np.random.randn()
+    return np.array([acceleration, steering])
 
 t_values = np.linspace(0, 20, 50)
 
@@ -56,19 +73,30 @@ target_y = func(target_x)
 Q = np.eye(4)
 R = np.eye(2)
 
-def cost_function(state, control, target, control_h, control_ad, control_prev=None):
+# def cost_function(state, control, target, control_h, control_ad, control_prev=None):
+#     state_cost = ca.mtimes((state[:2] - target).T, Q[:2, :2] @ (state[:2] - target))
+#     control_cost = ca.mtimes(control.T, R @ control)
+#     jerk_penalty = ca.sumsqr(control - control_prev) if control_prev is not None else 0
+#     transition_penalty = ca.sumsqr(control_h - control_ad)
+#     return state_cost + control_cost + jerk_penalty + transition_penalty
+
+def cost_function(state, control, target, control_h, control_ad, control_prev=None, alpha_t=0):
     state_cost = ca.mtimes((state[:2] - target).T, Q[:2, :2] @ (state[:2] - target))
     control_cost = ca.mtimes(control.T, R @ control)
     jerk_penalty = ca.sumsqr(control - control_prev) if control_prev is not None else 0
-    transition_penalty = ca.sumsqr(control_h - control_ad)
-    return state_cost + control_cost + jerk_penalty + transition_penalty
+    human_alignment_cost = alpha_t * ca.sumsqr(control - control_h)
+    ad_alignment_cost = (1 - alpha_t) * ca.sumsqr(control - control_ad)
+    return state_cost + control_cost + jerk_penalty + human_alignment_cost + ad_alignment_cost
+
 
 # Initialize optimization problem
 opti = ca.Opti()
 X = opti.variable(4, N + 1)  # State trajectory
 U_h = opti.variable(2, N)    # Human control inputs
 U_ad = opti.variable(2, N)   # AD agent control inputs
+U_combined = opti.variable(2, N)   # combined control inputs
 target_param = opti.parameter(2, N)  # Target trajectory
+alpha_param = opti.parameter(N)
 
 # Initialize variables for plotting
 x_trajectory, y_trajectory = [], []
@@ -87,24 +115,25 @@ for k in range(N):
 
     control_h = U_h[:, k]
     control_ad = U_ad[:, k]
+    control_combined = U_combined[:, k]
 
     # Time-varying alpha for blending
-    alpha_t = alpha(k * dt)
+    alpha_t = alpha_param[k]
 
-    # Compute blended control input
-    control_blended = blended_control(alpha_t, control_h, control_ad)
+    # Enforce blending constraint
+    opti.subject_to(control_combined == blended_control(alpha_t, control_h, control_ad))
 
     # Compute the target for the current step
     target = target_param[:, k]
 
     # Accumulate the cost
-    objective += cost_function(current_state_var, control_blended, target, control_h, control_ad, previous_control)
+    objective += cost_function(current_state_var, control_combined, target, control_h, control_ad, previous_control, alpha_t)
 
     # Enforce system dynamics
-    opti.subject_to(next_state_var == bicycle_model(current_state_var, control_blended))
+    opti.subject_to(next_state_var == bicycle_model(current_state_var, control_combined))
 
     # Update the previous control for jerk penalty
-    previous_control = control_blended
+    previous_control = control_combined
 
 # Add control constraints
 opti.subject_to(opti.bounded(-0.5, U_h[0, :], 1.0))  # Acceleration limits
@@ -121,7 +150,16 @@ trajectory_ax = plt.subplot(3, 1, 1)
 controls_h_ax = plt.subplot(3, 1, 2)
 controls_ad_ax = plt.subplot(3, 1, 3)
 
+takeover_triggered = False
+
 for t in range(len(target_x) - N):
+    current_time = t * dt
+
+    # Check if takeover should be triggered
+    if current_time >= TAKEOVER_TRIGGER_TIME and not takeover_triggered:
+        print(f"Takeover triggered at t = {current_time:.2f}s")
+        takeover_triggered = True
+
     # Set the initial state for optimization
     opti.set_initial(X[:, 0], current_state)
 
@@ -129,10 +167,19 @@ for t in range(len(target_x) - N):
     target_segment = np.vstack((target_x[t:t + N], target_y[t:t + N]))
     opti.set_value(target_param, target_segment)
 
+    # Compute alpha values for the horizon
+    alpha_values = [alpha(current_time + i*dt) for i in range(N)]
+    opti.set_value(alpha_param, alpha_values)
+
+    # Estimate human input (this would come from actual sensors in a real system)
+    human_input = human_input_estimate(current_time)
+    opti.set_initial(U_h, np.tile(human_input, (N, 1)).T)
+
     # Solve the optimization problem
     solution = opti.solve()
 
     # Get optimal control inputs
+    optimal_u_combined = solution.value(U_combined[:, 0])
     optimal_u_h = solution.value(U_h[:, 0])
     optimal_u_ad = solution.value(U_ad[:, 0])
 
@@ -142,8 +189,8 @@ for t in range(len(target_x) - N):
     # Store trajectories and control inputs
     x_trajectory.append(current_state[0])
     y_trajectory.append(current_state[1])
-    acceleration_all.append(optimal_u_h[0])
-    steering_angle_all.append(optimal_u_h[1])
+    acceleration_all.append(optimal_u_combined[0])
+    steering_angle_all.append(optimal_u_combined[1])
 
     predicted_x = solution.value(X[0, :N])  
     predicted_y = solution.value(X[1, :N]) 

@@ -1,6 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import casadi as ca
+from scipy.optimize import minimize
 
 class AVHandoverSystem:
     def __init__(self, T=10, L=2.5, dt=0.1):
@@ -23,20 +23,19 @@ class AVHandoverSystem:
         self.a_max = 2.0
         self.v_max = 20.0
 
-        # Setup CasADI optimizer
-        self.setup_optimizer()
-
     def alpha(self):
-        # Smoother transition function using sigmoid
-        k = 6  # Steepness of the sigmoid
-        return 1 / (1 + np.exp(-k * (self.t / self.T - 0.5)))
+        return min(1.0, self.t / self.T)
 
-    def kinematic_bicycle_model(self, x, y, theta, v, delta, a):
-        dx = v * ca.cos(theta)
-        dy = v * ca.sin(theta)
-        dtheta = (v / self.L) * ca.tan(delta)
+    def kinematic_bicycle_model(self, state, u):
+        x, y, theta, v = state
+        delta, a = u
+        
+        dx = v * np.cos(theta)
+        dy = v * np.sin(theta)
+        dtheta = (v / self.L) * np.tan(delta)
         dv = a
-        return [dx, dy, dtheta, dv]
+        
+        return np.array([dx, dy, dtheta, dv])
 
     def simulate_human_input(self):
         # Simplified human input simulation
@@ -44,115 +43,48 @@ class AVHandoverSystem:
         a_h = 0.5 * np.cos(2 * np.pi * self.t / 10)  # Oscillating acceleration
         return np.array([delta_h, a_h])
 
-    def setup_optimizer(self):
-        # State variables
-        x = ca.SX.sym('x')
-        y = ca.SX.sym('y')
-        theta = ca.SX.sym('theta')
-        v = ca.SX.sym('v')
-        states = ca.vertcat(x, y, theta, v)
-        n_states = states.numel()
-
-        # Control variables
-        delta = ca.SX.sym('delta')
-        a = ca.SX.sym('a')
-        controls = ca.vertcat(delta, a)
-        n_controls = controls.numel()
-
-        # Human input variables
-        delta_h = ca.SX.sym('delta_h')
-        a_h = ca.SX.sym('a_h')
-        human_controls = ca.vertcat(delta_h, a_h)
-
-        # Discretized system dynamics
-        rhs = self.kinematic_bicycle_model(x, y, theta, v, delta, a)
-        f = ca.Function('f', [states, controls], [ca.vertcat(*rhs)])
-
-        # Decision variables
-        U = ca.SX.sym('U', n_controls, self.N)
-        X = ca.SX.sym('X', n_states, self.N+1)
-        P = ca.SX.sym('P', n_states + n_states + n_controls)  # Parameters: initial state, reference state, human control
-
-        # Objective function
-        obj = 0
+    def mpc_cost(self, u_seq, x0, x_ref, u_human):
+        x = x0.copy()
+        cost = 0
+        
         for k in range(self.N):
-            st = X[:, k]
-            con = U[:, k]
-            st_ref = P[n_states:2*n_states]
-            human_con = P[2*n_states:]
-            alpha_k = 1 / (1 + ca.exp(-6 * ((self.t + k*self.dt) / self.T - 0.5)))
-            combined_con = (1 - alpha_k) * con + alpha_k * human_con
+            u_mpc = u_seq[2*k:2*k+2]
+            alpha_k = min(1.0, (self.t + k*self.dt) / self.T)
+            u = (1 - alpha_k) * u_mpc + alpha_k * u_human
             
-            obj += ca.mtimes([(st - st_ref).T, self.Q, (st - st_ref)])
-            obj += ca.mtimes([con.T, self.R, con])
-            obj += ca.mtimes([(con - human_con).T, self.S, (con - human_con)])
-
-        # Constraints
-        g = []
-        for k in range(self.N):
-            st = X[:, k]
-            con = U[:, k]
-            st_next = X[:, k+1]
-            human_con = P[2*n_states:]
-            alpha_k = 1 / (1 + ca.exp(-6 * ((self.t + k*self.dt) / self.T - 0.5)))
-            combined_con = (1 - alpha_k) * con + alpha_k * human_con
+            cost += np.dot(x - x_ref, np.dot(self.Q, x - x_ref))
+            cost += np.dot(u_mpc, np.dot(self.R, u_mpc))
+            cost += np.dot(u_mpc - u_human, np.dot(self.S, u_mpc - u_human))
             
-            st_next_pred = st + f(st, combined_con) * self.dt
-            g.append(st_next - st_next_pred)
+            x += self.kinematic_bicycle_model(x, u) * self.dt
+        
+        return cost
 
-        # Bounds and initial guess
-        lbx = [-ca.inf] * (n_states * (self.N+1)) + [-self.delta_max, -self.a_max] * self.N
-        ubx = [ca.inf] * (n_states * (self.N+1)) + [self.delta_max, self.a_max] * self.N
-        lbg = [0] * n_states * self.N
-        ubg = [0] * n_states * self.N
-
-        # NLP Problem
-        nlp = {'x': ca.vertcat(X.reshape((-1, 1)), U.reshape((-1, 1))),
-               'f': obj,
-               'g': ca.vertcat(*g),
-               'p': P}
-
-        # Create solver instance
-        opts = {'ipopt.print_level': 0, 'print_time': 0}
-        self.solver = ca.nlpsol('solver', 'ipopt', nlp, opts)
-
-        # Store CasADI functions
-        self.f = f
-        self.U = U
-        self.X = X
-        self.P = P
+    def mpc_constraints(self, u_seq):
+        return np.concatenate([
+            self.delta_max - np.abs(u_seq[::2]),  # Steering constraints
+            self.a_max - np.abs(u_seq[1::2])  # Acceleration constraints
+        ])
 
     def step(self, x_ref):
         u_human = self.simulate_human_input()
         
-        # Initial state and parameters
-        x0 = self.state
-        p = np.concatenate([x0, x_ref, u_human])
+        # Solve MPC problem
+        u0 = np.zeros(2 * self.N)
+        bounds = [(-self.delta_max, self.delta_max), (-self.a_max, self.a_max)] * self.N
+        constraints = {'type': 'ineq', 'fun': self.mpc_constraints}
         
-        # Initial guess
-        x_init = np.zeros((4, self.N+1))
-        x_init[:, 0] = x0
-        u_init = np.zeros((2, self.N))
-        nlp_init = np.concatenate([x_init.reshape((-1, 1)), u_init.reshape((-1, 1))])
-
-        # Solve NLP
-        sol = self.solver(x0=nlp_init, lbx=self.solver.lbx, ubx=self.solver.ubx,
-                          lbg=self.solver.lbg, ubg=self.solver.ubg, p=p)
-
-        # Extract solution
-        sol_x = sol['x'].full().flatten()
-        x_opt = sol_x[:4*(self.N+1)].reshape((4, -1))
-        u_opt = sol_x[4*(self.N+1):].reshape((2, -1))
-
-        # Get optimal control
-        u_mpc = u_opt[:, 0]
+        result = minimize(self.mpc_cost, u0, args=(self.state, x_ref, u_human),
+                          method='SLSQP', bounds=bounds, constraints=constraints)
+        
+        u_mpc = result.x[:2]
         
         # Combine MPC and human control
         alpha = self.alpha()
         u = (1 - alpha) * u_mpc + alpha * u_human
         
         # Update state
-        self.state += np.array(self.f(self.state, u)).flatten() * self.dt
+        self.state += self.kinematic_bicycle_model(self.state, u) * self.dt
         self.t += self.dt
         
         return self.state, u, u_mpc, u_human
@@ -181,9 +113,9 @@ def run_simulation():
     controls = np.array(controls)
     
     # Plotting
-    plt.figure(figsize=(15, 12))
+    plt.figure(figsize=(15, 10))
     
-    plt.subplot(3, 2, 1)
+    plt.subplot(2, 2, 1)
     plt.plot(states[:, 0], states[:, 1], label='Vehicle')
     plt.plot(x_ref[:, 0], x_ref[:, 1], '--', label='Reference')
     plt.title('Vehicle Trajectory')
@@ -191,7 +123,7 @@ def run_simulation():
     plt.ylabel('Y position')
     plt.legend()
     
-    plt.subplot(3, 2, 2)
+    plt.subplot(2, 2, 2)
     plt.plot(t_sim, controls[:, 0, 0], label='Combined')
     plt.plot(t_sim, controls[:, 1, 0], '--', label='MPC')
     plt.plot(t_sim, controls[:, 2, 0], ':', label='Human')
@@ -200,7 +132,7 @@ def run_simulation():
     plt.ylabel('Steering angle (rad)')
     plt.legend()
     
-    plt.subplot(3, 2, 3)
+    plt.subplot(2, 2, 3)
     plt.plot(t_sim, controls[:, 0, 1], label='Combined')
     plt.plot(t_sim, controls[:, 1, 1], '--', label='MPC')
     plt.plot(t_sim, controls[:, 2, 1], ':', label='Human')
@@ -209,26 +141,11 @@ def run_simulation():
     plt.ylabel('Acceleration (m/s^2)')
     plt.legend()
     
-    plt.subplot(3, 2, 4)
+    plt.subplot(2, 2, 4)
     plt.plot(t_sim, states[:, 3])
     plt.title('Vehicle Speed')
     plt.xlabel('Time')
     plt.ylabel('Speed (m/s)')
-    
-    plt.subplot(3, 2, 5)
-    alphas = [system.alpha() for _ in t_sim]
-    plt.plot(t_sim, alphas)
-    plt.title('Control Authority Function (α)')
-    plt.xlabel('Time')
-    plt.ylabel('α')
-    
-    plt.subplot(3, 2, 6)
-    plt.plot(t_sim, np.linalg.norm(controls[:, 0] - controls[:, 1], axis=1), label='Combined - MPC')
-    plt.plot(t_sim, np.linalg.norm(controls[:, 0] - controls[:, 2], axis=1), label='Combined - Human')
-    plt.title('Control Input Differences')
-    plt.xlabel('Time')
-    plt.ylabel('Euclidean Distance')
-    plt.legend()
     
     plt.tight_layout()
     plt.show()
