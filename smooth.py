@@ -2,19 +2,20 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 
-def blending_weights(t, t0=10, alpha=0.5):
-    lambda_h = 1 / (1 + np.exp(-alpha * (t - t0)))
+def blending_weights(t, t0, alpha=0.5):
+    lambda_h = 1 / (1 + np.exp(-alpha * (t - t0/2)))
     lambda_a = 1 - lambda_h
     return lambda_h, lambda_a
 
-def change_weights(t):
-    lambda_h = t/20
+def change_weights(t, T):
+    lambda_h = t/T
     lambda_a = 1 - lambda_h
     return lambda_h, lambda_a
 
-a = np.linspace(0, 20, 100)
-lambda_h, lambda_a = blending_weights(a)
-lambda_hc, lambda_ac = change_weights(a)
+T = 20  # takeover time allowed
+a = np.linspace(0, T, 100)
+lambda_h, lambda_a = blending_weights(a, T)
+lambda_hc, lambda_ac = change_weights(a, T)
 
 plt.plot(a, lambda_a, label = "AV")
 plt.plot(a, lambda_h, label = "Human")

@@ -14,8 +14,8 @@ class AVHandoverSystem:
         
         # MPC parameters
         self.N = 20  # Prediction horizon
-        self.Q = np.diag([1., 1., 0.5, 0.5])  # State cost
-        self.R = np.diag([0.1, 0.1])  # Control cost
+        self.Q = np.diag([1., 1., 1., 1.])  # State cost
+        self.R = np.diag([1., 1.])  # Control cost
         self.S = np.diag([1., 1.])  # Human-MPC difference cost
         
         # Constraints
@@ -25,6 +25,9 @@ class AVHandoverSystem:
 
     def alpha(self):
         return min(1.0, self.t / self.T)
+
+    def alpha(self, alpha_rate = 0.5):
+        return 1 / (1 + np.exp(-alpha_rate * (self.t - self.T/2)))
 
     def kinematic_bicycle_model(self, state, u):
         x, y, theta, v = state
@@ -39,8 +42,8 @@ class AVHandoverSystem:
 
     def simulate_human_input(self):
         # Simplified human input simulation
-        delta_h = 0.1 * np.sin(2 * np.pi * self.t / 5)  # Oscillating steering
-        a_h = 0.5 * np.cos(2 * np.pi * self.t / 10)  # Oscillating acceleration
+        delta_h = 0.01 * np.sin(2 * np.pi * self.t / 5)  # Oscillating steering
+        a_h = 0.1 * np.cos(2 * np.pi * self.t / 10)  # Oscillating acceleration
         return np.array([delta_h, a_h])
 
     def mpc_cost(self, u_seq, x0, x_ref, u_human):
@@ -113,7 +116,7 @@ def run_simulation():
     controls = np.array(controls)
     
     # Plotting
-    plt.figure(figsize=(15, 10))
+    plt.figure(figsize=(10, 8))
     
     plt.subplot(2, 2, 1)
     plt.plot(states[:, 0], states[:, 1], label='Vehicle')
