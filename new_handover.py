@@ -23,8 +23,8 @@ class AVHandoverSystem:
         self.a_max = 2.0
         self.v_max = 20.0
 
-    def alpha(self):
-        return min(1.0, self.t / self.T)
+    # def alpha(self):
+    #     return min(1.0, self.t / self.T)
 
     def alpha(self, alpha_rate = 0.5):
         return 1 / (1 + np.exp(-alpha_rate * (self.t - self.T/2)))
@@ -57,7 +57,7 @@ class AVHandoverSystem:
             
             cost += np.dot(x - x_ref, np.dot(self.Q, x - x_ref))
             cost += np.dot(u_mpc, np.dot(self.R, u_mpc))
-            cost += np.dot(u_mpc - u_human, np.dot(self.S, u_mpc - u_human))
+            cost += np.dot(u - u_human, np.dot(self.S, u - u_human))
             
             x += self.kinematic_bicycle_model(x, u) * self.dt
         
@@ -114,8 +114,7 @@ def run_simulation():
     
     states = np.array(states)
     controls = np.array(controls)
-    
-    # Plotting
+
     plt.figure(figsize=(10, 8))
     
     plt.subplot(2, 2, 1)
