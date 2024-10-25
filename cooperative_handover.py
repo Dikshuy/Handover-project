@@ -154,40 +154,6 @@ class SharedController:
         
         return constrained_steering, (av_weight, human_weight)
 
-# def simulate_scenario():
-#     """
-#     Example simulation scenario
-#     """
-#     # Initialize model and controller
-#     L = 2.7  # wheelbase in meters
-#     model = KinematicBicycleModel(L)
-    
-#     safety_params = {
-#         'max_steering': np.pi/4,  # 45 degrees
-#         'max_cross_track': 2.0,   # meters
-#         'max_heading_error': np.pi/4,  # 45 degrees
-#         'min_tracking': 0.3,
-#         'min_safety': 0.3
-#     }
-    
-#     controller = SharedController(model, safety_params)
-    
-#     # Simulation parameters
-#     t_span = (0, 10)
-#     t_eval = np.linspace(0, 10, 100)
-#     initial_state = [0, 0, 0]  # [x, y, theta]
-    
-#     # Reference trajectory (simple straight line for example)
-#     reference = lambda t: [t*20, 0, 0]  # [x_ref, y_ref, theta_ref]
-    
-#     # Example control inputs (could be more complex)
-#     av_steering = lambda t: 0.0
-#     human_steering = lambda t: 0.1 * np.sin(t)  # slight weaving
-#     human_readiness = lambda t: 0.5 + 0.5 * (1 - np.exp(-0.3*t))  # increasing readiness
-#     system_reliability = lambda t: 0.9  # constant high reliability
-    
-#     return model, controller, t_span, t_eval, initial_state, reference, \
-#            av_steering, human_steering, human_readiness, system_reliability
 
 class TransitionScenario:
     def __init__(self):
@@ -230,8 +196,9 @@ class TransitionScenario:
         Generate reference trajectory (curved path)
         """
         x_ref = 20 * t
-        y_ref = 5 * np.sin(0.2 * t)  # Sinusoidal path
-        theta_ref = np.arctan2(np.cos(0.2 * t), 4)
+        y_ref = 5 * t  # straight path
+        # y_ref = 5 * np.sin(0.2 * t)  # Sinusoidal path
+        theta_ref = np.arctan2(y_ref, x_ref)#np.cos(0.2 * t), 4)
         return np.array([x_ref, y_ref, theta_ref])
     
     def simulate(self):
@@ -266,7 +233,7 @@ class TransitionScenario:
             cross_track = state[1] - ref[1]
             heading_error = state[2] - ref[2]
             delay = 0.5  # simulated human delay
-            return -0.08 * cross_track - 0.2 * heading_error + 0.1 * np.sin(2*t - delay)
+            return -0.08 * cross_track - 0.2 * heading_error + 0.01 * np.sin(2*t - delay)
         
         # Simulation loop
         for i, t in enumerate(self.t_eval[:-1]):
@@ -301,14 +268,16 @@ class TransitionScenario:
             self.results['time'].append(t)
             
             # Integrate dynamics
-            sol = solve_ivp(
-                self.model.state_space, 
-                [t, t+dt], 
-                state, 
-                args=(blended_steering,),
-                method='RK45'
-            )
-            state = sol.y[:,-1]
+            # sol = solve_ivp(
+            #     self.model.state_space, 
+            #     [t, t+dt], 
+            #     state, 
+            #     args=(blended_steering,),
+            #     method='RK45'
+            # )
+            # state = sol.y[:,-1]
+            sol = np.array(self.model.state_space(t, state, blended_steering))
+            state = state + sol * dt
         
         # Convert results to numpy arrays
         for key in self.results:
