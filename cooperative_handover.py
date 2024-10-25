@@ -164,9 +164,9 @@ class SharedController:
     
 #     safety_params = {
 #         'max_steering': np.pi/4,  # 45 degrees
-#         'max_cross_track': 1.0,   # meters
+#         'max_cross_track': 2.0,   # meters
 #         'max_heading_error': np.pi/4,  # 45 degrees
-#         'min_tracking': 0.2,
+#         'min_tracking': 0.3,
 #         'min_safety': 0.3
 #     }
     
@@ -316,7 +316,7 @@ class TransitionScenario:
     
     def plot_results(self):
         # Create subplots
-        fig = plt.figure(figsize=(15, 12))
+        fig = plt.figure(figsize=(10, 8))
         gs = fig.add_gridspec(3, 2)
         
         # 1. Trajectory plot
