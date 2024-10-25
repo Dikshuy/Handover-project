@@ -154,40 +154,40 @@ class SharedController:
         
         return constrained_steering, (av_weight, human_weight)
 
-def simulate_scenario():
-    """
-    Example simulation scenario
-    """
-    # Initialize model and controller
-    L = 2.7  # wheelbase in meters
-    model = KinematicBicycleModel(L)
+# def simulate_scenario():
+#     """
+#     Example simulation scenario
+#     """
+#     # Initialize model and controller
+#     L = 2.7  # wheelbase in meters
+#     model = KinematicBicycleModel(L)
     
-    safety_params = {
-        'max_steering': np.pi/4,  # 45 degrees
-        'max_cross_track': 2.0,   # meters
-        'max_heading_error': np.pi/4,  # 45 degrees
-        'min_tracking': 0.3,
-        'min_safety': 0.3
-    }
+#     safety_params = {
+#         'max_steering': np.pi/4,  # 45 degrees
+#         'max_cross_track': 1.0,   # meters
+#         'max_heading_error': np.pi/4,  # 45 degrees
+#         'min_tracking': 0.2,
+#         'min_safety': 0.3
+#     }
     
-    controller = SharedController(model, safety_params)
+#     controller = SharedController(model, safety_params)
     
-    # Simulation parameters
-    t_span = (0, 10)
-    t_eval = np.linspace(0, 10, 100)
-    initial_state = [0, 0, 0]  # [x, y, theta]
+#     # Simulation parameters
+#     t_span = (0, 10)
+#     t_eval = np.linspace(0, 10, 100)
+#     initial_state = [0, 0, 0]  # [x, y, theta]
     
-    # Reference trajectory (simple straight line for example)
-    reference = lambda t: [t*20, 0, 0]  # [x_ref, y_ref, theta_ref]
+#     # Reference trajectory (simple straight line for example)
+#     reference = lambda t: [t*20, 0, 0]  # [x_ref, y_ref, theta_ref]
     
-    # Example control inputs (could be more complex)
-    av_steering = lambda t: 0.0
-    human_steering = lambda t: 0.1 * np.sin(t)  # slight weaving
-    human_readiness = lambda t: 0.5 + 0.5 * (1 - np.exp(-0.3*t))  # increasing readiness
-    system_reliability = lambda t: 0.9  # constant high reliability
+#     # Example control inputs (could be more complex)
+#     av_steering = lambda t: 0.0
+#     human_steering = lambda t: 0.1 * np.sin(t)  # slight weaving
+#     human_readiness = lambda t: 0.5 + 0.5 * (1 - np.exp(-0.3*t))  # increasing readiness
+#     system_reliability = lambda t: 0.9  # constant high reliability
     
-    return model, controller, t_span, t_eval, initial_state, reference, \
-           av_steering, human_steering, human_readiness, system_reliability
+#     return model, controller, t_span, t_eval, initial_state, reference, \
+#            av_steering, human_steering, human_readiness, system_reliability
 
 class TransitionScenario:
     def __init__(self):
@@ -245,7 +245,8 @@ class TransitionScenario:
             'av_weight': [],
             'human_weight': [],
             'tracking_error': [],
-            'safety_metric': []
+            'safety_metric': [],
+            'time': []
         }
         
         # Initial state
@@ -297,6 +298,7 @@ class TransitionScenario:
             self.results['safety_metric'].append(
                 self.controller.calculate_control_safety(state, blended_steering)
             )
+            self.results['time'].append(t)
             
             # Integrate dynamics
             sol = solve_ivp(
@@ -319,8 +321,8 @@ class TransitionScenario:
         
         # 1. Trajectory plot
         ax1 = fig.add_subplot(gs[0, :])
-        ref_y = [self.reference_trajectory(t)[1] for t in self.t_eval]
-        ax1.plot(self.t_eval * 20, ref_y, 'k--', label='Reference')
+        ref_y = [self.reference_trajectory(t)[1] for t in self.results['time']]
+        ax1.plot(self.results['time'] * 20, ref_y, 'k--', label='Reference')
         ax1.plot(self.results['state'][:,0], self.results['state'][:,1], 'b-', label='Actual')
         ax1.axvline(x=self.t0*20, color='r', linestyle=':', label='Start Transition')
         ax1.axvline(x=self.tT*20, color='g', linestyle=':', label='End Transition')
@@ -332,8 +334,8 @@ class TransitionScenario:
         
         # 2. Control weights
         ax2 = fig.add_subplot(gs[1, 0])
-        ax2.plot(self.t_eval[:-1], self.results['av_weight'], 'b-', label='AV Weight')
-        ax2.plot(self.t_eval[:-1], self.results['human_weight'], 'r-', label='Human Weight')
+        ax2.plot(self.results['time'], self.results['av_weight'], 'b-', label='AV Weight')
+        ax2.plot(self.results['time'], self.results['human_weight'], 'r-', label='Human Weight')
         ax2.axvline(x=self.t0, color='r', linestyle=':')
         ax2.axvline(x=self.tT, color='g', linestyle=':')
         ax2.set_xlabel('Time (s)')
@@ -344,7 +346,7 @@ class TransitionScenario:
         
         # 3. Steering angle
         ax3 = fig.add_subplot(gs[1, 1])
-        ax3.plot(self.t_eval[:-1], np.rad2deg(self.results['steering']), 'g-')
+        ax3.plot(self.results['time'], np.rad2deg(self.results['steering']), 'g-')
         ax3.axvline(x=self.t0, color='r', linestyle=':')
         ax3.axvline(x=self.tT, color='g', linestyle=':')
         ax3.set_xlabel('Time (s)')
@@ -354,8 +356,8 @@ class TransitionScenario:
         
         # 4. Performance metrics
         ax4 = fig.add_subplot(gs[2, 0])
-        ax4.plot(self.t_eval[:-1], self.results['tracking_error'], 'b-', label='Tracking')
-        ax4.plot(self.t_eval[:-1], self.results['safety_metric'], 'r-', label='Safety')
+        ax4.plot(self.results['time'], self.results['tracking_error'], 'b-', label='Tracking')
+        ax4.plot(self.results['time'], self.results['safety_metric'], 'r-', label='Safety')
         ax4.axvline(x=self.t0, color='r', linestyle=':')
         ax4.axvline(x=self.tT, color='g', linestyle=':')
         ax4.set_xlabel('Time (s)')
@@ -365,18 +367,18 @@ class TransitionScenario:
         ax4.grid(True)
         
         # 5. Heading angle
-        # ax5 = fig.add_subplot(gs[2, 1])
-        # ax5.plot(self.t_eval[:-1], np.rad2deg(self.results['state'][:-1,2]), 'g-')
-        # ax5.axvline(x=self.t0, color='r', linestyle=':')
-        # ax5.axvline(x=self.tT, color='g', linestyle=':')
-        # ax5.set_xlabel('Time (s)')
-        # ax5.set_ylabel('Heading Angle (deg)')
-        # ax5.set_title('Vehicle Heading')
-        # ax5.grid(True)
+        ax5 = fig.add_subplot(gs[2, 1])
+        ax5.plot(self.results['time'], np.rad2deg(self.results['state'][:,2]), 'g-')
+        ax5.axvline(x=self.t0, color='r', linestyle=':')
+        ax5.axvline(x=self.tT, color='g', linestyle=':')
+        ax5.set_xlabel('Time (s)')
+        ax5.set_ylabel('Heading Angle (deg)')
+        ax5.set_title('Vehicle Heading')
+        ax5.grid(True)
         
         plt.tight_layout()
         plt.pause(0.5)
-        # return fig
+        return fig
 
 # Run simulation and create visualization
 scenario = TransitionScenario()
