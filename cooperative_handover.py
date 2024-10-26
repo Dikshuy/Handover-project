@@ -1,6 +1,5 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from scipy.integrate import solve_ivp
 
 class KinematicBicycleModel:
     def __init__(self, L):
@@ -217,7 +216,8 @@ class TransitionScenario:
         }
         
         # Initial state
-        state = np.array([0.0, 0.0, 0.0])
+        init = self.reference_trajectory(0)
+        state = np.array([init[0], init[1], init[2]])
         
         # Control inputs
         def av_steering(t, state):
@@ -248,11 +248,18 @@ class TransitionScenario:
             av_auth, human_auth = self.transition_function(t)
             
             # Blend controls
-            blended_steering, (av_weight, human_weight) = self.controller.blend_control_inputs(
-                state, ref, av_steer, human_steer,
-                human_readiness=human_auth,
-                system_reliability=av_auth
-            )
+            if t < self.t0:
+                blended_steering = av_steer
+                av_weight, human_weight = 1.0, 0.0
+            elif t > self.tT:
+                blended_steering = human_steer
+                av_weight, human_weight = 0.0, 1.0
+            else:
+                blended_steering, (av_weight, human_weight) = self.controller.blend_control_inputs(
+                    state, ref, av_steer, human_steer,
+                    human_readiness=human_auth,
+                    system_reliability=av_auth
+                )
             
             # Store results
             self.results['state'].append(state.copy())
