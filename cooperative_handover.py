@@ -1,6 +1,10 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
+# only steering control as of now
+# add updates for acceleration control
+# use better controller then simple K controller
+
 class KinematicBicycleModel:
     def __init__(self, L):
         """
