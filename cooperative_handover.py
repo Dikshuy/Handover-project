@@ -192,7 +192,8 @@ class TransitionScenario:
             # Smooth sigmoid transition
             progress = (t - self.t0) / (self.tT - self.t0)
             sigmoid = 1 / (1 + np.exp(-10 * (progress - 0.5)))
-            return 1.0 - sigmoid, sigmoid
+            # return 1.0 - sigmoid, sigmoid
+            return 1.0 - progress, progress
     
     def reference_trajectory(self, t):
         """
