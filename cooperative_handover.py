@@ -88,12 +88,14 @@ class SharedController:
         def v_av(): 
             # AV contribution based on tracking performance and system reliability
             safety_av = self.calculate_control_safety(state, av_steering)
-            return tracking * system_reliability * safety_av
+            # return tracking * system_reliability * safety_av
+            return tracking * 1 * safety_av
         
         def v_human(): 
             # Human contribution based on readiness and control safety
             safety_human = self.calculate_control_safety(state, human_steering)
-            return tracking * human_readiness * safety_human
+            # return tracking * human_readiness * safety_human
+            return tracking * 1 * safety_human
         
         def v_coalition():
             # Coalition value considering synergy
@@ -103,7 +105,8 @@ class SharedController:
             )
             synergy_factor = 1.2  # Bonus for cooperation
             return min(
-                synergy_factor * max(v_av(), v_human()) * combined_safety,
+                # synergy_factor * max(v_av(), v_human()) * combined_safety,
+                1 * max(v_av(), v_human()) * combined_safety,
                 1.0  # Normalize to 1.0
             )
         
