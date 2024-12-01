@@ -6,12 +6,19 @@ l_r = 1.4
 l = l_f + l_r
 v = 1.4
 
-Q_av = np.diag([100, 100, 10])
+Q_av = np.diag([10, 100, 1])
 R_av = np.diag([0.1])
+
+Q_human = np.diag([10, 10, 1])
+R_human = np.diag([1])
 
 dt = 0.1
 time = 30
 N = 50
+
+t1 = 7  # av control
+t2 = 14 # handover time: 7 seconds
+t3 = (time-t2)  # human control
 
 def tire_slip_angle(delta_f):
     return np.arctan((l_r * np.tan(delta_f)) / (l_f + l_r))
@@ -81,6 +88,22 @@ def get_trajectory(v, total_time, dt, lane_width=1):
     trajectory = np.vstack([x, y, theta]).T
     return t, trajectory
 
+def control_input(A, B, Q, R, error):
+    P = [None] * (N+1)
+    K = [None] * N
+    P[N] = Q
+
+    for i in range(N, 0, -1):
+        P[i-1] = Q + A.T @ P[i] @ A - (A.T @ P[i] @ B) @ np.linalg.pinv(R + B.T @ P[i] @ B) @ (B.T @ P[i] @ A)
+
+    for i in range(N):
+        K[i] = np.linalg.inv(R + B.T @ P[i+1] @ B) @ (B.T @ P[i+1] @ A)
+    
+    u[0] = -K[0] @ error
+
+    return u
+
+
 x = np.array([[0], [0], [0]])
 state_history = []
 control_history = []
@@ -92,20 +115,29 @@ simulation_time = len(T)
 u = np.zeros(N)
 
 for t in range(simulation_time):
+    run_time = t * dt
     state_error = x - desired_trajectory[t].reshape(-1, 1)
     A, B = get_matrices(v, x[2, 0], u[0])
 
-    P_av = [None] * (N+1)
-    K_av = [None] * N
-    P_av[N] = Q_av
+    if run_time < t1:
+        u_av = control_input(A, B, Q_av, R_av, state_error)
+        u = u_av
 
-    for i in range(N, 0, -1):
-        P_av[i-1] = Q_av + A.T @ P_av[i] @ A - (A.T @ P_av[i] @ B) @ np.linalg.pinv(R_av + B.T @ P_av[i] @ B) @ (B.T @ P_av[i] @ A)
+    elif t1 <= run_time < t2:
+        alpha = (run_time - t1) / (t2 - t1)
+        Q_av_ = (1 - alpha) * Q_av
+        Q_human_ = (alpha) * Q_human
+        u_av = control_input(A, B, Q_av_, R_av, state_error)
+        u_human = control_input(A, B, Q_human_, R_human, state_error)
+        u = u_av + u_human
+        # u = (1-alpha) * u_av + alpha * u_human
 
-    for i in range(N):
-        K_av[i] = np.linalg.inv(R_av + B.T @ P_av[i+1] @ B) @ (B.T @ P_av[i+1] @ A)
-    
-    u[0] = -K_av[0] @ state_error
+    elif run_time >= t2:
+        u_human = control_input(A, B, Q_human, R_human, state_error)
+        u = u_human
+
+    else:
+        print("panic!")
 
     print("control input:", u[0])
 
