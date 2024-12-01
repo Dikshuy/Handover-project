@@ -6,6 +6,13 @@ l_r = 1.4
 l = l_f + l_r
 v = 1.4
 
+Q_av = np.diag([100, 100, 10])
+R_av = np.diag([0.1])
+
+dt = 0.1
+time = 30
+N = 50
+
 def tire_slip_angle(delta_f):
     return np.arctan((l_r * np.tan(delta_f)) / (l_f + l_r))
 
@@ -42,7 +49,7 @@ def update(state, input):
     return state
 
 def get_trajectory(v, total_time, dt, lane_width=1):
-    lane_change_time = 5
+    lane_change_time = 7
     straight_time = (total_time - lane_change_time) / 2
 
     # Straight path
@@ -74,23 +81,15 @@ def get_trajectory(v, total_time, dt, lane_width=1):
     trajectory = np.vstack([x, y, theta]).T
     return t, trajectory
 
-Q_av = np.diag([100, 100, 0])
-R_av = np.diag([0.1])
-
 x = np.array([[0], [0], [0]])
-state_history = [x.flatten()]
+state_history = []
 control_history = []
 tracking_error_history = []
-dt = 0.1
 
-N = 50
+T, desired_trajectory = get_trajectory(v, time, dt)
+simulation_time = len(T)
+
 u = np.zeros(N)
-
-time = 20
-
-t, desired_trajectory = get_trajectory(v, time, dt)
-
-simulation_time = int(time / dt)
 
 for t in range(simulation_time):
     state_error = x - desired_trajectory[t].reshape(-1, 1)
@@ -105,11 +104,11 @@ for t in range(simulation_time):
 
     for i in range(N):
         K_av[i] = np.linalg.inv(R_av + B.T @ P_av[i+1] @ B) @ (B.T @ P_av[i+1] @ A)
-        u[i] = -K_av[i] @ state_error
+    
+    u[0] = -K_av[0] @ state_error
 
     print("control input:", u[0])
 
-    # Update state (simple discrete-time update)
     x = update(x, u[0])
     
     tracking_error_history.append(state_error.flatten())
@@ -121,32 +120,41 @@ state_history = np.array(state_history)
 control_history = np.array(control_history)
 tracking_error_history = np.array(tracking_error_history)
 
-plt.figure(figsize=(15, 5))
+plt.figure(figsize=(14, 6))
 
 # Position tracking
 plt.subplot(1, 3, 1)
-plt.plot(state_history[:, 0], state_history[:, 1], label='Actual Trajectory')
-plt.plot(desired_trajectory[:, 0], desired_trajectory[:, 1], '--', label='Desired Trajectory')
-plt.title('Position Tracking')
-plt.xlabel('X')
-plt.ylabel('Y')
+plt.plot(state_history[:, 0], state_history[:, 1], label='Actual Trajectory', linewidth=2)
+plt.plot(desired_trajectory[:, 0], desired_trajectory[:, 1], '--', label='Desired Trajectory', linewidth=2)
+plt.title('Position Tracking', fontsize=14)
+plt.ylim(-0.5,1.5)
+plt.xlabel('X [m]')
+plt.ylabel('Y [m]')
 plt.legend()
+plt.grid(True, which="both", linestyle="--", linewidth=0.5)
+plt.minorticks_on()
 
 # Heading angle tracking
 plt.subplot(1, 3, 2)
-plt.plot(state_history[:, 2], label='Actual Heading')
-plt.plot(desired_trajectory[:, 2], '--', label='Desired Heading')
-plt.title('Heading Angle Tracking')
-plt.xlabel('Time Step')
-plt.ylabel('Heading Angle')
+plt.plot(T, state_history[:, 2], label='Actual Heading', linewidth=2)
+plt.plot(T, desired_trajectory[:, 2], '--', label='Desired Heading', linewidth=2)
+plt.title('Heading Angle Tracking', fontsize=14)
+plt.ylim(-0.1, 0.3)
+plt.xlabel('Time [s]')
+plt.ylabel('Heading Angle [rad]')
 plt.legend()
+plt.grid(True, which="both", linestyle="--", linewidth=0.5)
+plt.minorticks_on()
 
 # Control input
 plt.subplot(1, 3, 3)
-plt.plot(control_history)
-plt.title('Control Input')
+plt.plot(control_history, linewidth=2)
+plt.title('Control Input', fontsize=14)
+plt.ylim(-0.3, 0.3)
 plt.xlabel('Time Step')
-plt.ylabel('Control Input')
+plt.ylabel('Steering Angle [rad]')
+plt.grid(True, which="both", linestyle="--", linewidth=0.5)
+plt.minorticks_on()
 
 plt.tight_layout()
 plt.show()
