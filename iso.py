@@ -34,8 +34,9 @@ def path(car_width=1.8):
     
     # Section 2 (transition up)
     length = sections[1]["length"]
+    width = sections[1]["width"]
     x_coords_top.extend([current_x, current_x + length])
-    y_coords_top.extend([base_y + width, base_y + width + 2])
+    y_coords_top.extend([base_y + width, base_y + width])
     x_coords_bottom.extend([current_x, current_x + length])
     y_coords_bottom.extend([base_y, base_y])
     current_x += length
@@ -43,22 +44,22 @@ def path(car_width=1.8):
     # Section 3 (narrow section with offset)
     length = sections[2]["length"]
     x_coords_top.extend([current_x, current_x + length])
-    y_coords_top.extend([base_y + width + 2, base_y + width + 2])
+    y_coords_top.extend([base_y + width, base_y + width])
     x_coords_bottom.extend([current_x, current_x + length])
-    y_coords_bottom.extend([base_y + width + 2 - (car_width + 1), base_y + width + 2 - (car_width + 1)])
+    y_coords_bottom.extend([base_y + width - (car_width + 1), base_y + width - (car_width + 1)])
     current_x += length
     
     # Section 4 (transition down)
     length = sections[3]["length"]
     x_coords_top.extend([current_x, current_x + length])
-    y_coords_top.extend([base_y + width + 2, base_y + width])
+    y_coords_top.extend([base_y + width, base_y + width])
     x_coords_bottom.extend([current_x, current_x + length])
-    y_coords_bottom.extend([base_y + width + 2 - (car_width + 1), base_y])
+    y_coords_bottom.extend([base_y, base_y])
     current_x += length
     
     # Section 5 (final straight)
     length = sections[4]["length"]
-    final_width = sections[4]["width"]
+    width = sections[4]["width"]
     x_coords_top.extend([current_x, current_x + length])
     y_coords_top.extend([base_y + width, base_y + width])
     x_coords_bottom.extend([current_x, current_x + length])
@@ -71,6 +72,8 @@ def path(car_width=1.8):
     ax.set_xlabel("Track Length (m)")
     ax.set_ylabel("Track Width (m)")
     ax.set_title("Obstacle Avoidance Track")
+
+    ax.set_aspect('equal')
     
     return fig, ax
 
