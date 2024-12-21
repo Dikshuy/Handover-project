@@ -148,14 +148,18 @@ def shared_control(u, simulation_time, desired_trajectory):
             u_av = control_input(A, B, Q_av, R_av, state_error)
             u = u_av
 
-        elif t1 < run_time < t2:
+        elif t1 <= run_time < t2:
             alpha = (run_time - t1) / (t2 - t1)
-            Q_av_ = (1 - alpha) * Q_av
-            Q_human_ = (alpha) * Q_human
-            u_av = control_input(A, B, Q_av_, R_av, state_error)
-            u_human = control_input(A, B, Q_human_, R_human, state_error)
-            u = u_av + u_human
-            # u = (1-alpha) * u_av + alpha * u_human
+            if q_sharing:
+                Q_av_ = (1 - alpha) * Q_av
+                Q_human_ = (alpha) * Q_human
+                u_av = control_input(A, B, Q_av_, R_av, state_error)
+                u_human = control_input(A, B, Q_human_, R_human, state_error)
+                u = u_av + u_human
+            else:
+                u_av = control_input(A, B, Q_av, R_av, state_error)
+                u_human = control_input(A, B, Q_human, R_human, state_error)
+                u = (1-alpha) * u_av + alpha * u_human
 
         elif run_time >= t2:
             u_human = control_input(A, B, Q_human, R_human, state_error)
@@ -213,6 +217,9 @@ T, desired_trajectory = get_trajectory(v, time, dt)
 simulation_time = len(T)
 
 u = np.zeros(N)
+
+q_sharing = True
+# q_sharing = False
 
 state_history_av, control_history_av, tracking_error_history_av = av_control(u, simulation_time, desired_trajectory)
 state_history_shared, control_history_shared, tracking_error_history_shared = shared_control(u, simulation_time, desired_trajectory)

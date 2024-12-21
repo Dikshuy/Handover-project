@@ -114,6 +114,9 @@ simulation_time = len(T)
 
 u = np.zeros(N)
 
+# q_sharing = True
+q_sharing = False
+
 for t in range(simulation_time):
     run_time = t * dt
     state_error = x - desired_trajectory[t].reshape(-1, 1)
@@ -125,12 +128,16 @@ for t in range(simulation_time):
 
     elif t1 <= run_time < t2:
         alpha = (run_time - t1) / (t2 - t1)
-        Q_av_ = (1 - alpha) * Q_av
-        Q_human_ = (alpha) * Q_human
-        u_av = control_input(A, B, Q_av_, R_av, state_error)
-        u_human = control_input(A, B, Q_human_, R_human, state_error)
-        u = u_av + u_human
-        # u = (1-alpha) * u_av + alpha * u_human
+        if q_sharing:
+            Q_av_ = (1 - alpha) * Q_av
+            Q_human_ = (alpha) * Q_human
+            u_av = control_input(A, B, Q_av_, R_av, state_error)
+            u_human = control_input(A, B, Q_human_, R_human, state_error)
+            u = u_av + u_human
+        else:
+            u_av = control_input(A, B, Q_av, R_av, state_error)
+            u_human = control_input(A, B, Q_human, R_human, state_error)
+            u = (1-alpha) * u_av + alpha * u_human
 
     elif run_time >= t2:
         u_human = control_input(A, B, Q_human, R_human, state_error)
