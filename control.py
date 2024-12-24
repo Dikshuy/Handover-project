@@ -5,22 +5,22 @@ from path import trajectory
 l_f = 1.2
 l_r = 1.4
 length = l_f + l_r
-v = 3
+v = 1
 width = 1.8
 
 Q_av = np.diag([100, 100, 10])
 R_av = np.diag([1])
 
-Q_human = np.diag([100, 100, 1])
-R_human = np.diag([1])
+Q_human = np.diag([500, 500, 100])
+R_human = np.diag([10])
 
 dt = 0.1
 time = 61
 N = 50
 
-t1 = 5   # av control
-t2 = 55  # shared control
-t3 = (time-t2)  # human control
+t1 = 2   # av control
+t2 = 57  # shared control
+t3 = 2   # human control
 
 def get_trajectory(width):
     waypoints = trajectory(width)

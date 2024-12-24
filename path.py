@@ -55,7 +55,7 @@ def trajectory(car_width=1.8):
     y_coords_middle = []
     theta_middle = []
     
-    points_per_meter = 4
+    points_per_meter = 10
     
     current_x = 0
     base_y = -(1.1 * car_width + 0.25) / 2
