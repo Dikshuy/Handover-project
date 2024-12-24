@@ -1,147 +1,164 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from path import trajectory
 
-# Function to generate waypoints from the track
-def path(car_width=1.8):
-    sections = [
-        {"length": 12, "width": 1.1 * car_width + 0.25},    # Section 1
-        {"length": 13.5, "width": (1.1 * car_width + 0.25 + 1) + (1) + (1 + car_width)},  # Section 2
-        {"length": 11, "width": 1 + car_width},             # Section 3
-        {"length": 12.5, "width": (1.3 * car_width + 0.25 + 1) + (1) + (1 + car_width)},  # Section 4
-        {"length": 12, "width": 1.3 * car_width + 0.25},    # Section 5
-    ]
+l_f = 1.2
+l_r = 1.4
+length = l_f + l_r
+v = 3
+width = 1.8
 
-    waypoints = []
-    current_x = 0
-    base_y = -(1.1 * car_width + 0.25) / 2
+Q_av = np.diag([100, 100, 10])
+R_av = np.diag([1])
 
-    # Section 1 (straight)
-    length = sections[0]["length"]
-    for i in range(100):
-        x = current_x + i * length / 100
-        waypoints.append([x, base_y + sections[0]["width"] / 2, 0])
-    current_x += length
+Q_human = np.diag([100, 100, 1])
+R_human = np.diag([1])
 
-    # Section 2 (transition up)
-    length = sections[1]["length"]
-    for i in range(100):
-        x = current_x + i * length / 100
-        waypoints.append([x, base_y + sections[1]["width"] / 2, 0])
-    current_x += length
+dt = 0.1
+time = 61
+N = 50
 
-    # Section 3 (narrow section with offset)
-    length = sections[2]["length"]
-    for i in range(100):
-        x = current_x + i * length / 100
-        waypoints.append([x, base_y + sections[1]["width"] / 2 - (car_width + 1) / 2, 0])
-    current_x += length
+t1 = 5   # av control
+t2 = 55  # shared control
+t3 = (time-t2)  # human control
 
-    # Section 4 (transition down)
-    length = sections[3]["length"]
-    for i in range(100):
-        x = current_x + i * length / 100
-        waypoints.append([x, base_y + sections[3]["width"] / 2, 0])
-    current_x += length
+def get_trajectory(width):
+    waypoints = trajectory(width)
+    x, y, theta = waypoints['x'], waypoints['y'], waypoints['theta']
+    waypoints = np.vstack([x, y, theta]).T
+    return waypoints
 
-    # Section 5 (final straight)
-    length = sections[4]["length"]
-    for i in range(100):
-        x = current_x + i * length / 100
-        waypoints.append([x, base_y + sections[4]["width"] / 2, 0])
-
-    return np.array(waypoints)
-
-# Updated trajectory function
-def get_trajectory(v, time, dt):
-    waypoints = path()
-    T = np.linspace(0, time, len(waypoints))
-    return T, waypoints
-
-# Main LQR implementation (reusing your code)
 def tire_slip_angle(delta_f):
-    return np.arctan((1.4 * np.tan(delta_f)) / (1.2 + 1.4))
+    return np.arctan((l_r * np.tan(delta_f)) / (l_f + l_r))
 
 def get_matrices(v, theta, delta_f):
     beta = tire_slip_angle(delta_f)
-    d_beta_d_delta = 1.4 / ((1.2 + 1.4) * np.cos(delta_f) ** 2)
+    d_beta_d_delta = l_r / ((l_f + l_r) * np.cos(delta_f) ** 2)
 
     A = np.array([
-        [0, 0, -v * np.sin(theta + beta)],
-        [0, 0, v * np.cos(theta + beta)],
+
+        [0, 0, -v * np.sin(theta+beta)],
+        [0, 0, v * np.cos(theta+beta)],
         [0, 0, 0]
     ])
 
     B = np.array([
-        [-v * np.sin(theta + beta) * d_beta_d_delta],
-        [v * np.cos(theta + beta) * d_beta_d_delta],
-        [v * np.cos(beta) / 1.4 * d_beta_d_delta]
+        [-v * np.sin(theta+beta) * d_beta_d_delta],
+        [v * np.cos(theta+beta) * d_beta_d_delta],
+        [v * np.cos(beta)/l_r * d_beta_d_delta]
     ])
-
+    
     return A, B
 
 def update(state, input):
     x, y, theta = state
     delta = input
 
-    beta = np.arctan(1.4 / (1.2 + 1.4) * np.tan(delta))
+    beta = np.arctan(l_r / length * np.tan(delta))
 
-    x = x + 1.4 * np.cos(theta + beta) * 0.1
-    y = y + 1.4 * np.sin(theta + beta) * 0.1
-    theta = theta + 1.4 / (1.2 + 1.4) * np.sin(beta) * 0.1
+    x = x + v * np.cos(theta + beta) * dt
+    y = y + v * np.sin(theta + beta) * dt
+    theta = theta + v / length * np.sin(beta) * dt
     state = np.array([x, y, theta])
 
     return state
 
 def control_input(A, B, Q, R, error):
-    N = 50
-    P = [None] * (N + 1)
+    P = [None] * (N+1)
     K = [None] * N
     P[N] = Q
 
     for i in range(N, 0, -1):
-        P[i - 1] = Q + A.T @ P[i] @ A - (A.T @ P[i] @ B) @ np.linalg.pinv(R + B.T @ P[i] @ B) @ (B.T @ P[i] @ A)
+        P[i-1] = Q + A.T @ P[i] @ A - (A.T @ P[i] @ B) @ np.linalg.pinv(R + B.T @ P[i] @ B) @ (B.T @ P[i] @ A)
 
-    K[0] = np.linalg.inv(R + B.T @ P[1] @ B) @ (B.T @ P[1] @ A)
-
-    u = -K[0] @ error
+    for i in range(N):
+        K[i] = np.linalg.inv(R + B.T @ P[i+1] @ B) @ (B.T @ P[i+1] @ A)
+    
+    u = np.zeros(N)
+    u[0] = -K[0] @ error
 
     return u
-
-# Simulation
-Q_av = np.diag([10, 100, 1])
-R_av = np.diag([0.1])
-
-Q_human = np.diag([10, 10, 1])
-R_human = np.diag([1])
 
 x = np.array([[0], [0], [0]])
 state_history = []
 control_history = []
 tracking_error_history = []
 
-T, desired_trajectory = get_trajectory(1.4, 30, 0.1)
-simulation_time = len(T)
+desired_trajectory = get_trajectory(width)
+simulation_time = len(desired_trajectory)
+T = np.arange(simulation_time) * dt
+
+u = np.zeros(N)
+q_sharing = False
 
 for t in range(simulation_time):
-    run_time = t * 0.1
-    state_error = x.flatten() - desired_trajectory[t]
-    A, B = get_matrices(1.4, x[2, 0], 0)
-    u = control_input(A, B, Q_av, R_av, state_error)
+    run_time = t * dt
+    state_error = x - desired_trajectory[t].reshape(-1, 1)
+    A, B = get_matrices(v, x[2, 0], u[0])
 
-    x = update(x.flatten(), u)
+    if run_time < t1:
+        u_av = control_input(A, B, Q_av, R_av, state_error)
+        u = u_av
 
-    tracking_error_history.append(state_error)
+    elif t1 <= run_time < t2:
+        alpha = (run_time - t1) / (t2 - t1)
+        if q_sharing:
+            Q_av_ = (1 - alpha) * Q_av
+            Q_human_ = alpha * Q_human
+            u_av = control_input(A, B, Q_av_, R_av, state_error)
+            u_human = control_input(A, B, Q_human_, R_human, state_error)
+            u = u_av + u_human
+        else:
+            u_av = control_input(A, B, Q_av, R_av, state_error)
+            u_human = control_input(A, B, Q_human, R_human, state_error)
+            u = (1-alpha) * u_av + alpha * u_human
+
+    else:
+        u_human = control_input(A, B, Q_human, R_human, state_error)
+        u = u_human
+
+    x = update(x, u[0])
+    
+    tracking_error_history.append(state_error.flatten())
     state_history.append(x.flatten())
-    control_history.append(u)
+    control_history.append(u[0])
 
-# Visualization
+
 state_history = np.array(state_history)
-plt.figure(figsize=(14, 6))
-plt.plot(state_history[:, 0], state_history[:, 1], label="Actual Trajectory")
-plt.plot(desired_trajectory[:, 0], desired_trajectory[:, 1], '--', label="Desired Trajectory")
+control_history = np.array(control_history)
+tracking_error_history = np.array(tracking_error_history)
+
+# Plotting results
+plt.figure(figsize=(16, 5))
+
+# Position tracking
+plt.subplot(1, 3, 1)
+plt.plot(state_history[:, 0], state_history[:, 1], label='Actual Trajectory', linewidth=2)
+plt.plot(desired_trajectory[:, 0], desired_trajectory[:, 1], '--', label='Desired Trajectory', linewidth=2)
+plt.title('Position Tracking', fontsize=14)
+plt.xlabel('X [m]')
+plt.ylabel('Y [m]')
 plt.legend()
-plt.xlabel("X [m]")
-plt.ylabel("Y [m]")
-plt.title("LQR Path Tracking")
 plt.grid(True)
+plt.axis('equal')
+
+# Heading angle tracking
+plt.subplot(1, 3, 2)
+plt.plot(T, state_history[:, 2], label='Actual Heading', linewidth=2)
+plt.plot(T, desired_trajectory[:, 2], '--', label='Desired Heading', linewidth=2)
+plt.title('Heading Angle Tracking', fontsize=14)
+plt.xlabel('Time [s]')
+plt.ylabel('Heading Angle [rad]')
+plt.legend()
+plt.grid(True)
+
+# Control input
+plt.subplot(1, 3, 3)
+plt.plot(T, control_history, linewidth=2)
+plt.title('Control Input', fontsize=14)
+plt.xlabel('Time [s]')
+plt.ylabel('Steering Angle [rad]')
+plt.grid(True)
+
+plt.tight_layout()
 plt.show()

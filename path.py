@@ -13,14 +13,14 @@ def bezier_curve(p0, p1, p2, p3, num_points=50):
     return curve_x, curve_y
 
 def calculate_theta(x, y):
-    """Calculate heading angle at each point using local tangent."""
+    """Calculate heading angle at each point using local tangent"""
     dx = np.gradient(x)
     dy = np.gradient(y)
     theta = np.arctan2(dy, dx)
     return theta
 
 def equally_space_points(x, y, num_points):
-    """Resample points to be equally spaced along the curve."""
+    """Resample points to be equally spaced along the curve"""
     dx = np.diff(x)
     dy = np.diff(y)
     distances = np.sqrt(dx**2 + dy**2)
@@ -35,18 +35,7 @@ def equally_space_points(x, y, num_points):
     return new_x, new_y
 
 def trajectory(car_width=1.8):
-    """
-    Generates a trajectory for a car to follow through an obstacle avoidance track.
-    Parameters:
-    car_width (float): The width of the car in meters. Default is 1.8 meters.
-    Returns:
-        - trajectory_coords (dict): A dictionary containing the x, y coordinates and heading angles (theta) of the middle trajectory.
-            - 'x' (numpy.ndarray): The x coordinates of the middle trajectory.
-            - 'y' (numpy.ndarray): The y coordinates of the middle trajectory.
-            - 'theta' (numpy.ndarray): The heading angles of the middle trajectory.
-    """
-    fig, ax = plt.subplots(figsize=(16, 8))
-    
+    """Generates a trajectory for a car to follow through an obstacle avoidance track"""    
     section_2_width = (1.1 * car_width + 0.25 + 1) + (1) + (1 + car_width)
     section_4_width = (1.3 * car_width + 0.25 + 1) + (1) + (1 + car_width)
     
@@ -181,26 +170,28 @@ def trajectory(car_width=1.8):
     y_coords_top.extend([base_y + width, base_y + width])
     x_coords_bottom.extend([current_x, current_x + length])
     y_coords_bottom.extend([base_y, base_y])
+
+    # fig, ax = plt.subplots(figsize=(16, 8))
     
-    ax.plot(x_coords_top, y_coords_top, 'k-', linewidth=2, label='Track Boundary')
-    ax.plot(x_coords_bottom, y_coords_bottom, 'k-', linewidth=2)
-    ax.plot(x_coords_middle, y_coords_middle, 'r--', linewidth=2, label='Middle Trajectory')
+    # ax.plot(x_coords_top, y_coords_top, 'k-', linewidth=2, label='Track Boundary')
+    # ax.plot(x_coords_bottom, y_coords_bottom, 'k-', linewidth=2)
+    # ax.plot(x_coords_middle, y_coords_middle, 'r--', linewidth=2, label='Middle Trajectory')
     
-    # Visualize heading angles with arrows
-    n = 8
-    arrow_length = 0.3
-    for i in range(0, len(x_coords_middle), n):
-        ax.arrow(x_coords_middle[i], y_coords_middle[i],
-                arrow_length * np.cos(theta_middle[i]),
-                arrow_length * np.sin(theta_middle[i]),
-                head_width=0.1, head_length=0.2, fc='blue', ec='blue', alpha=0.5)
+    # # Visualize heading angles with arrows
+    # n = 8
+    # arrow_length = 0.3
+    # for i in range(0, len(x_coords_middle), n):
+    #     ax.arrow(x_coords_middle[i], y_coords_middle[i],
+    #             arrow_length * np.cos(theta_middle[i]),
+    #             arrow_length * np.sin(theta_middle[i]),
+    #             head_width=0.1, head_length=0.2, fc='blue', ec='blue', alpha=0.5)
     
-    ax.grid(True, linestyle='--', alpha=0.7)
-    ax.set_xlabel("Track Length (m)")
-    ax.set_ylabel("Track Width (m)")
-    ax.set_title("Obstacle Avoidance Track")
-    ax.set_aspect('equal')
-    ax.legend()
+    # ax.grid(True, linestyle='--', alpha=0.7)
+    # ax.set_xlabel("Track Length (m)")
+    # ax.set_ylabel("Track Width (m)")
+    # ax.set_title("Obstacle Avoidance Track")
+    # ax.set_aspect('equal')
+    # ax.legend()
     
     trajectory_coords = {
         'x': x_coords_middle,
@@ -208,8 +199,8 @@ def trajectory(car_width=1.8):
         'theta': theta_middle
     }
     
-    return fig, ax, trajectory_coords
+    return trajectory_coords
 
 car_width = 1.8
-fig, ax, trajectory = trajectory(car_width)
-plt.show()
+waypoints = trajectory(car_width)
+# plt.show()
